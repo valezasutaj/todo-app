@@ -1,0 +1,5 @@
+git
+workflow-aggregator
+junit
+ws-cleanup
+timestamper
