@@ -1,0 +1,16 @@
+# .NET
+backend/**/bin/
+backend/**/obj/
+backend/**/*.user
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+
+# Test results
+**/test-results/
+
+# Editor / OS
+.vs/
+.vscode/
+.DS_Store
