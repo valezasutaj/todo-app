@@ -6,7 +6,6 @@ RUN npm ci
 
 COPY . .
 
-# `docker build --target test` runs the suite in isolation (used by CI).
 FROM build AS test
 CMD ["npm", "run", "test:ci"]
 

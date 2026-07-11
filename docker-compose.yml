@@ -16,6 +16,7 @@ services:
       retries: 10
 
   backend:
+    image: ${BACKEND_IMAGE:-todoapi-backend}:${TAG:-latest}
     build:
       context: ./backend
       target: final
@@ -29,6 +30,7 @@ services:
         condition: service_healthy
 
   frontend:
+    image: ${FRONTEND_IMAGE:-todoapp-frontend}:${TAG:-latest}
     build:
       context: ./frontend
       target: final

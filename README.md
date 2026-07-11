@@ -56,12 +56,24 @@ docker run --rm -v "$PWD/frontend/test-results:/app/test-results" todoapp-fronte
 
 Both produce JUnit XML under `test-results/`.
 
-## CI (Jenkins)
+## CI/CD (Jenkins)
 
-The `Jenkinsfile` at the repo root:
+The `Jenkinsfile` at the repo root implements a full pipeline with local deployment as the target environment:
 
-1. Runs backend and frontend tests in parallel via `docker build --target test`, publishing JUnit results.
-2. Builds the final backend/frontend images.
-3. Brings the full stack up with `docker compose` and smoke-tests `/health`, `/`, and `/api/todos/`.
+1. **Test** — backend and frontend suites run in parallel via `docker build --target test`; JUnit results are published to Jenkins.
+2. **Build Images** — production images are built and tagged with the build number (`todoapi-backend:<n>`, `todoapp-frontend:<n>`) plus `latest`.
+3. **Deploy** — the exact images that were just built are deployed with `docker compose -p todoapp up -d`. The stack stays running; each build replaces only the containers whose image changed, and the Postgres volume (data) survives deployments.
+4. **Verify Deployment** — the pipeline checks `/health`, `/`, and `/api/todos/` against the live deployment.
 
-Requires a Jenkins agent with Docker (and Docker Compose) available.
+The job polls the Git repository every ~2 minutes (`pollSCM`), so a push to `master` triggers a new build and deployment automatically.
+
+Requires a Jenkins agent with Docker (and Docker Compose) available. A ready-to-use local Jenkins image (Docker CLI + Compose + plugins + auto-created admin user and pipeline job) lives in `jenkins-local/`:
+
+```
+cd jenkins-local
+docker build -t tema-jenkins .
+docker run -d --name tema-jenkins -p 8090:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock tema-jenkins
+```
+
+Jenkins: http://localhost:8090 (admin / admin123).

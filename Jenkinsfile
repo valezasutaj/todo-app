@@ -6,13 +6,19 @@ pipeline {
         disableConcurrentBuilds()
     }
 
+    triggers {
+        pollSCM('H/2 * * * *')
+    }
+
     environment {
-        BACKEND_IMAGE = "todoapi-backend"
-        FRONTEND_IMAGE = "todoapp-frontend"
-        COMPOSE_PROJECT = "todoapp-ci-${BUILD_NUMBER}"
+        BACKEND_IMAGE  = 'todoapi-backend'
+        FRONTEND_IMAGE = 'todoapp-frontend'
+        DEPLOY_PROJECT = 'todoapp'
+        APP_HOST       = "${env.SMOKE_TEST_HOST ?: 'host.docker.internal'}"
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 checkout scm
@@ -21,13 +27,9 @@ pipeline {
 
         stage('Test') {
             parallel {
+
                 stage('Backend Tests') {
                     steps {
-                        // Uses `docker create`/`docker cp` instead of a bind-mounted volume:
-                        // when Jenkins itself runs inside a container talking to the host's
-                        // Docker daemon (docker-outside-of-docker), a `-v` path is resolved by
-                        // the daemon's filesystem, not Jenkins' own, so bind mounts silently
-                        // fail to line up. docker cp works regardless of where Jenkins runs.
                         sh "docker build --target test -t ${BACKEND_IMAGE}-test:${BUILD_NUMBER} ./backend"
                         sh """
                             set +e
@@ -74,35 +76,29 @@ pipeline {
 
         stage('Build Images') {
             steps {
-                sh "docker build --target final -t ${BACKEND_IMAGE}:${BUILD_NUMBER} ./backend"
-                sh "docker build --target final -t ${FRONTEND_IMAGE}:${BUILD_NUMBER} ./frontend"
+                sh "docker build --target final -t ${BACKEND_IMAGE}:${BUILD_NUMBER} -t ${BACKEND_IMAGE}:latest ./backend"
+                sh "docker build --target final -t ${FRONTEND_IMAGE}:${BUILD_NUMBER} -t ${FRONTEND_IMAGE}:latest ./frontend"
             }
         }
 
-        stage('Integration Smoke Test') {
+        stage('Deploy') {
             steps {
-                // SMOKE_TEST_HOST defaults to host.docker.internal because this pipeline
-                // is designed to run from a containerized Jenkins agent talking to the host's
-                // Docker daemon: published container ports land on that host, not on the
-                // Jenkins container's own network namespace. Override to "localhost" if this
-                // agent runs directly on the Docker host instead.
-                sh "docker compose -p ${COMPOSE_PROJECT} up -d --build"
+                sh "TAG=${BUILD_NUMBER} docker compose -p ${DEPLOY_PROJECT} up -d"
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
                 sh """
-                    HOST=\${SMOKE_TEST_HOST:-host.docker.internal}
                     for i in \$(seq 1 15); do
-                        curl -sf http://\$HOST:5000/health && exit 0
+                        curl -sf http://${APP_HOST}:5000/health && exit 0
                         sleep 2
                     done
                     echo 'Backend did not become healthy in time' >&2
                     exit 1
                 """
-                sh "HOST=\${SMOKE_TEST_HOST:-host.docker.internal}; curl -sf http://\$HOST:3001/ > /dev/null"
-                sh "HOST=\${SMOKE_TEST_HOST:-host.docker.internal}; curl -sf http://\$HOST:3001/api/todos/ > /dev/null"
-            }
-            post {
-                always {
-                    sh "docker compose -p ${COMPOSE_PROJECT} down -v"
-                }
+                sh "curl -sf http://${APP_HOST}:3001/ > /dev/null"
+                sh "curl -sf http://${APP_HOST}:3001/api/todos/ > /dev/null"
             }
         }
     }
