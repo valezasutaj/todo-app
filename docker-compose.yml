@@ -28,6 +28,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   frontend:
     image: ${FRONTEND_IMAGE:-todoapp-frontend}:${TAG:-latest}
@@ -37,7 +43,15 @@ services:
     ports:
       - "3001:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1, not localhost: that resolves to ::1 first and nginx binds IPv4 only.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
 volumes:
   postgres-data:

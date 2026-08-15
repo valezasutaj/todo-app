@@ -1,0 +1,63 @@
+# Deployment definition used by the Jenkins pipeline.
+#
+# Unlike docker-compose.yml (development) this file never builds: it only runs
+# images that the pipeline has already built and tagged, so a deployment is always
+# a known, reproducible artifact. The image tag comes from the .env file that the
+# Deploy stage writes, which is also what makes a rollback a one-line change.
+name: todoapp
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tododb}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Deliberately not published: only the backend needs to reach the database.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-tododb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  backend:
+    image: ${BACKEND_IMAGE:-todoapi-backend}:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      ConnectionStrings__TodoDb: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-tododb};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}"
+      Cors__AllowedOrigin: ${CORS_ALLOWED_ORIGIN:-http://localhost:3001}
+    ports:
+      - "${BACKEND_PORT:-5000}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      # EF Core migrations run at startup, so allow time before counting failures.
+      start_period: 30s
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-todoapp-frontend}:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3001}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1, not localhost: that resolves to ::1 first and nginx binds IPv4 only.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  postgres-data:

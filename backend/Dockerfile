@@ -18,6 +18,12 @@ RUN dotnet publish src/TodoApi/TodoApi.csproj -c Release --no-build -o /app/publ
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
+
+# curl is what the container healthcheck uses; the aspnet image does not ship it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=publish /app/publish .
 
 ENV ASPNETCORE_URLS=http://+:8080
